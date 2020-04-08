@@ -87,7 +87,8 @@ protocol buffers是类似于xml的，用来序列化结构化数据(for serilizi
   }
 
 
-那么，具体是怎么来用这个protocol buffers
+## 如何使用.proto文件？
+
 
 第一步：定义了一个package piauto.planning && message Planning对象
     piatuo::planning::Planning planning_decision;
