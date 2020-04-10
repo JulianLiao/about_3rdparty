@@ -150,7 +150,25 @@ cmake .. && make
 
 
 
+## 序列化与反序列化
 
+很明显，'SerializaToArray' 和 'ParseFromArray' 是相对应的
+
+
+RadarObstacle::RadarObs radar_obstacles;
+size_t size = radar_obstacles.ByteSizeLong();
+char buff[size];
+// buff是一个Array
+radar_obstacles.SerializeToArray(buff, size);
+
+radar_obstacles这样一种message被序列化成一个char型数组。
+
+
+piatuo::planning::Planning planning_decision;
+const char *body;
+unsigned int len;
+// body是一个array
+planning_decision.ParseFromArray(body, len);  ## 我理解，这句话是给planning_decision字段做了赋值。
 
 
 
