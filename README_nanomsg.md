@@ -1,61 +1,16 @@
 
-## 我关于PIMsgAdaptor的认知
+## 关于PIMsgAdaptor，我的认知
 
-PIMsgAdaptor用到了boost::signals2。
-
-首先，用boost::signals2::signal 定义了一个变量 msg_signal_t，如下：
-typedef boost::signals2::signal<pi_msg_callback_t> msg_signal_t;
-
-之后又定义了如下的订阅接口，
-boost::signals2::connection addSubscriberToSubMsg(const msg_signal_t::slot_type &subscriber);
-
-调用订阅接口的手法很高明，直接把函数的实现放在参数里了。
-
-```
-这样的用法，是否眼熟呢？
-
-radar的callback是啥，void(const int, const Radar77Data &)
-
-在radar_77.h，首先用boost::signals2::signal定义了一个变量 radar_signal_t，如下
-
-typedef boost::signals2::signal<void(const int, const Radar77Data &)> radar_signal_t;
-
-之后，又定义了如下的订阅接口，
-boost::signals2::connection SubscribeToRadar(const radar_signal_t::slot_type &subscriber);
-
-回顾下，在radar_barrier_range_finder.cc是如何调用订阅接口的
-
-can_obj_->GetRadar_77(0).SubscribeToRadar(boost::bind(&RadarBarrierRangeFinder::Impl::RadarUpdate, this, _1, -2));
-
-RadarUpdate声明如下：
-void RadarUpdate(const int chl, const chassis::Radar77Data &radar_objs);
-```
+1. PIMsgAdaptor用到了boost::signals2。
 
 
+## PIMsgAdapter重点变量及其类型分析
 
+### 消息
 
-首先，定义了一个回调函数
-
-handler
-    - 这条消息是哪个通道发过来的
-    - 这条消息所对应的通道号，the channel id this message related to
-p_env
-    - #handler通道来的消息的封装结构体
-body
-    - 这个通道发过来的具体消息内容
-    - 消息内容
-len
-    - 这个通道发过来的具体消息内容长度
-    - 消息内容长度
-using pi_msg_callback_t = int(int handler, p_pi_msg_envelope_t p_env, const char *body, unsigned int len);
-
-关于 p_pi_msg_envelope_t 定义如下，
+pi_msg_envelope_t是对所要发送消息的封装，是对消息的描述。
 
 ```
-要知道nanomsg 本身就是关于消息的。
-
-正如其名字所言，pi_msg_envelope_t就是对打算发送的消息做了个封装。
-
 typedef struct pi_msg_envelope_t_ {
     // used for message filtering
     char filter[16];        // filter肯定是用作过滤的，是对type字段作过滤吗
@@ -66,7 +21,10 @@ typedef struct pi_msg_envelope_t_ {
     // placeholder for the start address of actual body info.
     const char *data;
 } pi_msg_envelope_t, *p_pi_msg_envelope_t;
-```
+
+疑问1. #pi_msg_envelope_t里面的data字段 和 #pi_msg_callback_t里面的body参数 之间的区别是啥？
+
+    要知道，他们都是 const char *数据类型。无论是接数据，还是发数据，很少用到#pi_msg_envelope_t的data字段，大多数时候都用的是#pi_msg_callback_t里面的body参数。
 
 关于 #pi_msg_envelope_t 里面的字段type的可能取值，如下
 
@@ -107,14 +65,20 @@ typedef enum pi_msg_type_t_ {
     PIMSG_SENSOR_IMURAWDATA = 701,
     PIMSG_SENSOR_GPSRAWDATA = 702
 } pi_msg_type_t;
+```
 
-pi_msg_envelope_t是对所要发送消息的封装，是对消息的描述。
+### 消息通道MsgChannel
 
 封装好的消息是要建立起通道，靠通道往外发送的。PIMsgChannelInfo则是对通道的描述。
 
 struct PIMsgChannelInfo {
     // 通道类型，是sub（订阅通道）还是req（request/reply）
     // NN_SUB, 订阅通道
+    // NN_PUB
+    // NN_REQ
+    // NN_REP, 订阅通道
+    // NN_RESPONDENT
+    // NN_SURVEYOR
     int type;
 
     // 要么是tcp url，要么是ipc文件路径
@@ -127,27 +91,53 @@ struct PIMsgChannelInfo {
 
     int handler;  // handler为负数代表无效通道
 }
+--------------------------------
+// 它的key只有3个取值
 
+//    NN_SUB    -    NN_SUB这种通道类型可以有很多个通道，channel1, channel2, channel3...，所以，对应的value会是一个std::vector类型
 
+//    NN_REP
 
+//    NN_RESPONDENT
 
-
-
-我的疑问：
-1. #pi_msg_envelope_t里面的data字段 和 #pi_msg_callback_t里面的body参数 之间的区别是啥？
-    要知道，他们都是 const char *数据类型。
-
-## PIMsgAdapter重点变量及其类型分析
-
-/** 它的key只有3个取值
-*     NN_SUB
-*             NN_SUB这种通道类型可以有很多个通道，channel1, channel2, channel3...
-*     NN_REP
-*     NN_RESPONDENT
-*
-** /
 typedef std::unordered_map<int, std::vector<PIMsgChannelInfo>> channels_map_t;
 
+### 回调函数callback
+
+要有订阅接口，除了定义订阅接口外，还得定义其对应的callback。
+
+boost::signals2::connection addSubscriberToSubMsg(const msg_signal_t::slot_type &subscriber);
+
+关于msg_signal_t的定义如下：typedef boost::signals2::signal<pi_msg_callback_t> msg_signal_t;
+
+handler
+    - 这条消息是哪个通道发过来的
+p_env
+    - #handler通道来的消息的封装结构体
+body
+    - 这个通道发过来的具体消息内容
+len
+    - 这个通道发过来的具体消息内容长度
+
+关于回调函数的定义如下：using pi_msg_callback_t = int(int handler, p_pi_msg_envelope_t p_env, const char *body, unsigned int len);
+
+调用订阅接口的手法很高明，直接把函数的实现放在参数里了。
+
+```
+回想一下，当时在radar_77.h，是如何定义订阅接口及其对应的callback
+
+boost::signals2::connection SubscribeToRadar(const radar_signal_t::slot_type &subscriber);
+
+    关于radar_sig_t定义如下：typedef boost::signals2::signal<void(const int, const Radar77Data &)> radar_signal_t;
+
+在radar_barrier_range_finder.cc，是如何调用订阅接口的？
+
+can_obj_->GetRadar_77(0).SubscribeToRadar(boost::bind(&RadarBarrierRangeFinder::Impl::RadarUpdate, this, _1, _2));
+
+其中，RadarUpdate声明如下：
+
+void RadarUpdate(const int id, const Radar77Data &radar_objs);
+```
 
 ## PIMsgAdapter重点函数分析
 
@@ -263,4 +253,38 @@ radar_barrier_range_finder.cc 用到了 planning.pb.h，但它用到了 radar_ob
 
 SendProtoLoop() 这个线程干的事情，是把radar源数据发送给感知的进程，视觉和radar Associate用的。
 
-当实际运行1/2个例子后，就会理解pi_msg_envelope_t含义。
+
+
+## 关于DataCollection
+
+所有运营数据都会被收集，这些数据包括：
+
+- 运营时间
+- 干预次数
+- 不同模式下的里程数
+
+- chassis数据
+  * 车速
+  * 转角
+  * 刹车
+- planning数据
+  * 信号(signal)
+  * 决策(decision)
+- perception数据
+  * 视觉obstacles
+  * radar obstacles
+  * sonar obstacles
+- localization数据
+  * pose
+  * heading
+- 路线(route)数据
+  * 地图
+
+
+### chassis 与 DataCollection交互
+
+    Step1: ./chassis_test
+
+    Step2: ./data_collection --ID=LiaoMeng --chassis_addr=tcp://0.0.0.0:7001
+
+      运行Step2后，就创建了一个目录，2020_04_10_20_53_00，里面会出现 chassis.pb.dat，这个文件里面保存了chassis发过来的数据。
