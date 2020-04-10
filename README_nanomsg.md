@@ -36,10 +36,17 @@ void RadarUpdate(const int chl, const chassis::Radar77Data &radar_objs);
 
 首先，定义了一个回调函数
 
-handler - 这条消息所对应的通道号，the channel id this message related to
-p_env - 对所要发送消息的一个封装结构体
-body - 消息内容
-len - 消息内容长度
+handler
+    - 这条消息是哪个通道发过来的
+    - 这条消息所对应的通道号，the channel id this message related to
+p_env
+    - #handler通道来的消息的封装结构体
+body
+    - 这个通道发过来的具体消息内容
+    - 消息内容
+len
+    - 这个通道发过来的具体消息内容长度
+    - 消息内容长度
 using pi_msg_callback_t = int(int handler, p_pi_msg_envelope_t p_env, const char *body, unsigned int len);
 
 关于 p_pi_msg_envelope_t 定义如下，
@@ -130,13 +137,69 @@ struct PIMsgChannelInfo {
 1. #pi_msg_envelope_t里面的data字段 和 #pi_msg_callback_t里面的body参数 之间的区别是啥？
     要知道，他们都是 const char *数据类型。
 
+## PIMsgAdapter重点变量及其类型分析
+
+/** 它的key只有3个取值
+*     NN_SUB
+*             NN_SUB这种通道类型可以有很多个通道，channel1, channel2, channel3...
+*     NN_REP
+*     NN_RESPONDENT
+*
+** /
+typedef std::unordered_map<int, std::vector<PIMsgChannelInfo>> channels_map_t;
+
 
 ## PIMsgAdapter重点函数分析
 
+### 注册消息通道
 // 成功的话，会返回一个非负数的channel id
 int registerOneMessageChannel(PIMsgChannelInfo chl);
 
+注册了消息通道，就会有进程往这个消息通道发送消息
 
+不管是发送消息，还是接收消息，都要注册一个消息通道
+
+
+### 注册回调函数
+
+// 监听从不同通道过来的消息
+boost::signals2::connection addSubscriberToSubMsg(const msg_signal_t::slot_type &subscriber);
+
+
+### 往指定通道发消息
+
+// 返回值是0，发送成功，不是0，发送失败
+int send(int handler, p_pi_msg_envelope_t p_env, const char *body, unsigned int len, std::function<pi_msg_callback_t> callback);
+
+std::string pub_addr = "tcp://0.0.0.0:4050";
+std::shared_ptr<PIAUTO::msg::PIMsgAdaptor> obsmsg_adp_ = std::make_shared<PIAUTO::msg::PIMsgAdaptor>();
+int pub_obs_handler_ = obsmag_adp_->registerOneMessageChannel({NN_SUB, "tcp://0.0.0.0:4050", "radar_obs", -1});
+
+    size_t size = radar_obstacles.ByteSizeLong();  // radar_obstacles这个message所包含的字节数
+    char buff[size];
+    radar_obstacles.SerializeToArray(buff, size);
+
+pi_msg_envelope_t env;
+memcpy(env.filter, "radar_obs", sizeof("radar_obs"));
+env.type = PIMSG_VIDAR_RADAR_OBSTACLES_RAWDATA;
+env.length = size;
+
+int rc = obsmsg_adp_->send(pub_obs_handler_, &env, buff, size, nullptr);
+
+### 启动/关闭接收线程
+
+void startRecvLoop();
+  如果只注册了NN_SUB消息通道的话，那么只会启动一个线程 #subReceiveLoop
+
+  在 #subReceiveLoop线程里，做了2件事情：
+      a. 收数据
+          收数据是看注册了哪些消息通道，他就从这些消息通道里一个一个去收消息
+      b. 发数据
+          发数据是看谁注册了回调函数，谁注册了就发给谁
+
+void stopRecvLoop();
+
+注意：startRecvLoop()不是一定要调用的，如果只是要往外发消息，就没必要启动接收线程。如果需要从外面接收消息，那就需要调用startRecvLoop()。
 
 std::shared_ptr<PIAUTO::msg::PIMsgAdapter> vehicle_status_adp_;    // 从命名来看，这个adapter和车体状态有关。
 vehicle_status_adp_ = std::make_shared<PIAUTO::msg::PIMsgAdapter>();

@@ -160,14 +160,14 @@ size_t size = radar_obstacles.ByteSizeLong();
 char buff[size];
 // buff是一个Array
 radar_obstacles.SerializeToArray(buff, size);
-
-radar_obstacles这样一种message被序列化成一个char型数组。
+radar_obstacles这样一种message被序列化成一个char型数组buff。
 
 
 piatuo::planning::Planning planning_decision;
 const char *body;
 unsigned int len;
 // body是一个array
+// 这是把body这样一个char型数组反序列化成了planning_decision这样一个message。
 planning_decision.ParseFromArray(body, len);  ## 我理解，这句话是给planning_decision字段做了赋值。
 
 
