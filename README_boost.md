@@ -1,10 +1,21 @@
 第一个问题：如何check ubuntu16.04 有没有安装boost，如果有安装，那么boost是什么版本？
 
+方法1 - 通过dpkg
 
-第一种方法：dpkg -s libboost-dev | grep Version
+在命令行里输入 **dpkg -s libboost-dev | grep Version**
 
-![boost version1](imgs/boost/boost_version_method1.png "boost version1")
+![dpkg](imgs/boost/check_boost_via_dpkg.png "dpkg")
 
-第二种方法：cat /usr/include/boost/version.hpp | grep "BOOST_LIB_VERSION"
 
-![boost version2](imgs/boost/boost_version_method2.png "boost version2")
+方法2 - 通过pkg-config
+
+在命令行里输入 **pkg-config --modversion boost**
+
+![pkg-config](imgs/boost/check_boost_via_pkg-config.png "pkg-config")
+
+
+方法3 - 通过文件
+
+cat /usr/include/boost/version.hpp | grep "BOOST_LIB_VERSION"
+
+![file](imgs/boost/check_boost_via_file.png "file")
